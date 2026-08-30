@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D FPS</title>
+    <title>3D FPS Mobile</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body, html { width: 100%; height: 100%; overflow: hidden; background: #a0c4ff; font-family: 'Segoe UI', sans-serif; }
@@ -557,9 +557,13 @@ const touchState = {
     moveVector: { x: 0, y: 0 },
     isAimingBtn: false,
     isShootBtn: false,
-    joystickTouchId: null,
-    aimTouchId: null
+    joystickTouchId: null
 };
+
+// 記錄所有可用於控制視角的觸控點座標 (支援背景滑動、瞄準按鈕與射擊按鈕)
+const lookTouches = {}; 
+let aimTouchId = null;
+let shootTouchId = null;
 
 let lastAimTouchX = 0;
 let lastAimTouchY = 0;
@@ -1258,10 +1262,12 @@ function setupEventListeners() {
         }
     }, { passive: false });
 
+    // === 雙軌/手機端觸控控制系統 ===
     const joyContainer = document.getElementById('joystick-container');
     const joyKnob = document.getElementById('joystick-knob');
     const joyRadius = 60;
 
+    // 左側搖桿觸控處理
     joyContainer.addEventListener('touchstart', (e) => {
         for (let touch of e.changedTouches) {
             if (touchState.joystickTouchId === null) {
@@ -1270,41 +1276,6 @@ function setupEventListeners() {
             }
         }
     }, { passive: false });
-
-    window.addEventListener('touchmove', (e) => {
-        for (let touch of e.changedTouches) {
-            if (touch.identifier === touchState.joystickTouchId) {
-                updateJoystick(touch);
-            }
-            if (touch.identifier === touchState.aimTouchId) {
-                const deltaX = touch.clientX - lastAimTouchX;
-                const deltaY = touch.clientY - lastAimTouchY;
-                lastAimTouchX = touch.clientX;
-                lastAimTouchY = touch.clientY;
-
-                const sensitivity = 0.005; 
-                player.rotation.y -= deltaX * sensitivity;
-                player.rotation.x -= deltaY * sensitivity;
-                player.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, player.rotation.x));
-            }
-        }
-    }, { passive: false });
-
-    const resetJoystick = (e) => {
-        for (let touch of e.changedTouches) {
-            if (touch.identifier === touchState.joystickTouchId) {
-                touchState.joystickTouchId = null;
-                touchState.moveVector = { x: 0, y: 0 };
-                joyKnob.style.transform = `translate(0px, 0px)`;
-            }
-            if (touch.identifier === touchState.aimTouchId) {
-                touchState.aimTouchId = null;
-            }
-        }
-    };
-
-    window.addEventListener('touchend', resetJoystick);
-    window.addEventListener('touchcancel', resetJoystick);
 
     function updateJoystick(touch) {
         const rect = joyContainer.getBoundingClientRect();
@@ -1325,48 +1296,110 @@ function setupEventListeners() {
         touchState.moveVector.y = dy / joyRadius;
     }
 
+    // 全局 Touch Move：同時處理搖桿與所有視角旋轉觸控
+    window.addEventListener('touchmove', (e) => {
+        for (let touch of e.changedTouches) {
+            if (touch.identifier === touchState.joystickTouchId) {
+                updateJoystick(touch);
+            }
+            
+            // 若該觸控點屬於視角控制 (畫面右側滑動、瞄準按鈕滑動或射擊按鈕滑動)
+            if (lookTouches[touch.identifier]) {
+                const prev = lookTouches[touch.identifier];
+                const deltaX = touch.clientX - prev.x;
+                const deltaY = touch.clientY - prev.y;
+                lookTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
+
+                const sensitivity = 0.004; 
+                player.rotation.y -= deltaX * sensitivity;
+                player.rotation.x -= deltaY * sensitivity;
+                player.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, player.rotation.x));
+            }
+        }
+    }, { passive: false });
+
+    // 全局 Touch End / Cancel 清理
+    const resetTouchState = (e) => {
+        for (let touch of e.changedTouches) {
+            if (touch.identifier === touchState.joystickTouchId) {
+                touchState.joystickTouchId = null;
+                touchState.moveVector = { x: 0, y: 0 };
+                joyKnob.style.transform = `translate(0px, 0px)`;
+            }
+            if (lookTouches[touch.identifier]) {
+                delete lookTouches[touch.identifier];
+            }
+        }
+    };
+    window.addEventListener('touchend', resetTouchState);
+    window.addEventListener('touchcancel', resetTouchState);
+
+    // 螢幕右側空白處滑動轉動視角
     window.addEventListener('touchstart', (e) => {
         for (let touch of e.changedTouches) {
-            if (touch.clientX > window.innerWidth / 2 && touchState.aimTouchId === null) {
+            if (touch.clientX > window.innerWidth / 2 && touchState.joystickTouchId !== touch.identifier) {
                 const target = e.target;
-                if (!target.classList.contains('touch-btn')) {
-                    touchState.aimTouchId = touch.identifier;
-                    lastAimTouchX = touch.clientX;
-                    lastAimTouchY = touch.clientY;
+                if (!target.classList.contains('touch-btn') && !target.closest('#joystick-container')) {
+                    lookTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
                 }
             }
         }
     });
 
+    // 瞄準按鈕：按住開鏡 + 滑動轉動視角
     const aimBtn = document.getElementById('touch-aim-btn');
     if (aimBtn) {
         aimBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
+            const touch = e.changedTouches[0];
             touchState.isAimingBtn = true;
+            aimTouchId = touch.identifier;
+            lookTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
             aimBtn.classList.add('active');
             toggleAim(true);
         });
+        
         const releaseAim = (e) => {
-            touchState.isAimingBtn = false;
-            aimBtn.classList.remove('active');
-            toggleAim(false);
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === aimTouchId) {
+                    touchState.isAimingBtn = false;
+                    aimTouchId = null;
+                    delete lookTouches[touch.identifier];
+                    aimBtn.classList.remove('active');
+                    if (!touchState.isShootBtn) toggleAim(false);
+                }
+            }
         };
         aimBtn.addEventListener('touchend', releaseAim);
         aimBtn.addEventListener('touchcancel', releaseAim);
     }
 
+    // 射擊按鈕：按住自動開鏡 + 射擊 + 滑動轉動視角
     const shootBtn = document.getElementById('touch-shoot-btn');
     if (shootBtn) {
         shootBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
+            const touch = e.changedTouches[0];
             touchState.isShootBtn = true;
+            shootTouchId = touch.identifier;
+            lookTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
             shootBtn.classList.add('active');
+            toggleAim(true);
+            
             const curWpn = player.inventory[player.currentSlot];
             if (curWpn.type === 'semi') shoot();
         });
+        
         const releaseShoot = (e) => {
-            touchState.isShootBtn = false;
-            shootBtn.classList.remove('active');
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === shootTouchId) {
+                    touchState.isShootBtn = false;
+                    shootTouchId = null;
+                    delete lookTouches[touch.identifier];
+                    shootBtn.classList.remove('active');
+                    if (!touchState.isAimingBtn) toggleAim(false);
+                }
+            }
         };
         shootBtn.addEventListener('touchend', releaseShoot);
         shootBtn.addEventListener('touchcancel', releaseShoot);
@@ -1686,7 +1719,8 @@ function updatePlayer(dt) {
         player.rotation.x -= recovery;
     }
 
-    const isAiming = (mouseButtons && mouseButtons[2]) || touchState.isAimingBtn;
+    // 只要「右鍵」、「瞄準按鈕」或「射擊按鈕」任一被按住，均維持開鏡狀態
+    const isAiming = (mouseButtons && mouseButtons[2]) || touchState.isAimingBtn || touchState.isShootBtn;
     player.targetFov = isAiming ? 45 : 75;
     camera.fov = THREE.MathUtils.lerp(camera.fov, player.targetFov, 0.2);
     camera.updateProjectionMatrix();
