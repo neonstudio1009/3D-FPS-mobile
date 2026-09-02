@@ -2168,7 +2168,21 @@ function respawn1v1Player() {
         updateUI();
     }, 2000);
 }
+// 當玩家在選單點擊 1v1 開始時
+function join1v1Game() {
+    const inputPassword = document.getElementById('roomPassword').value || 'room1';
+    
+    // 告訴後端我要加入這個房間
+    socket.emit('join1v1', inputPassword);
+}
 
+// 接收到伺服器通知「人數湊齊 2 人」才正式開始遊戲
+socket.on('matchReady', () => {
+    document.getElementById('menu').style.display = 'none'; // 關閉選單
+    isGameActive = true; // 開啟遊戲迴圈
+    // 注意：這裡不要呼叫 spawnBot()，改由玩家自己同步座標
+});
+    
 </script>
 </body>
 </html>
