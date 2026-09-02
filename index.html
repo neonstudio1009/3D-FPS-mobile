@@ -579,6 +579,7 @@ let player = {
     rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
     recoilPitch: 0,
     hp: 100, maxHp: 100, speed: 7.5,
+    isDead: false,
     onGround: false, inventory: [], currentSlot: 0,
     isAiming: false, targetFov: 75,
     kills: 0, earnedCoins: 0, lastHitTime: 0,
@@ -1461,7 +1462,7 @@ function explodeAt(pos, radius, maxDamage) {
     if (distPlayer < radius) {
         player.hp -= Math.floor((1 - distPlayer / radius) * maxDamage);
         updateUI();
-        if (player.hp <= 0) gameOver();
+        
     }
 
     botEntities.forEach(bot => {
@@ -1717,14 +1718,16 @@ function updatePlayer(dt) {
 
     // === 1. 新增：玩家血量與死亡判定 (區分 1V1 與普通模式) ===
     if (player.hp <= 0) {
-        if (currentMode === '1v1') {
-            player.hp = 0;
-            respawn1v1Player(); // 1V1 模式：觸發無限復活
-        } else {
-            isGameActive = false; // 普通模式：遊戲結束
-            document.getElementById('gameover-screen').style.display = 'block';
+        player.hp = 0;
+        if (!player.isDead) {
+            player.isDead = true; // 防止每幀重複觸發復活倒數
+            if (currentMode === '1v1') {
+                respawn1v1Player(); // 1V1 模式：觸發復活
+            } else {
+                gameOver(); // 普通模式：結束遊戲
+            }
         }
-        return; // 死亡後直接中斷後續的位移與開槍邏輯
+        return; // 死亡期間中斷位移與開槍
     }
 
     // 後座力恢復
@@ -1900,7 +1903,7 @@ function updateAI(dt) {
 
                 if (Math.random() < 0.55 && now - player.lastHitTime > 400) {
                     player.hp -= 5; player.lastHitTime = now; updateUI();
-                    if (player.hp <= 0) gameOver();
+                    
                 }
             }
         }
@@ -2019,6 +2022,7 @@ function openCustomPrepScreen() {
 }
 
 function start1v1Match() {
+    player.isDead = false;
     isCustomMatch = true;
     currentMode = '1v1';
 
@@ -2068,12 +2072,24 @@ function start1v1Match() {
 }
 
 function respawn1v1Player() {
-    // 設置 2 秒後在固定地點滿血重生
+    // 顯示倒數提示（可選）
+    const feed = document.getElementById('kill-feed');
+    const msg = document.createElement('div');
+    msg.className = 'kill-msg';
+    msg.innerHTML = `<span style="color:#e53e3e">你已陣亡，2 秒後於基地復活...</span>`;
+    feed.prepend(msg);
+
     setTimeout(() => {
         player.hp = 100;
-        // 根據你程式碼的設定，位置變數為 player.pos
-        player.pos.set(0, 1.7, 15); 
+        player.pos.set(0, 1.7, 15); // 重置回 1V1 出生點
         player.vel.set(0, 0, 0);
+        player.isDead = false;       // 解除死亡狀態標記
+        
+        // 補滿當前武器彈藥
+        const curWpn = player.inventory[player.currentSlot];
+        if (curWpn) curWpn.ammo = curWpn.ammoMax;
+        
+        msg.remove();
         updateUI();
     }, 2000);
 }
