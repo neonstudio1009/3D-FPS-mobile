@@ -1,4 +1,6 @@
-const io = require('socket.io')(3000, { cors: { origin: "*" } });
+const io = require('socket.io')(server, {
+    cors: { origin: "*" }
+});
 const players = {};
 
 io.on('connection', (socket) => {
