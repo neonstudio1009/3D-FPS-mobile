@@ -214,6 +214,9 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 新增這行 -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -451,6 +454,33 @@
 </div>
 
 <script>
+    
+// 建立與伺服器的連線（請替換為你的後端 Port 或網址）
+const socket = io("http://localhost:3000");
+
+// 儲存其他線上玩家的模型物件，結構為 { socketId: THREE.Group }
+const remotePlayers = {};
+
+// 輔助函式：當有新玩家加入時，為他在 Three.js 場景中建立一個角色模型
+function createRemotePlayerMesh(id) {
+    const group = new THREE.Group();
+    
+    // 建立簡單的人體模型 (藍色身體 + 白色頭部)
+    const matBody = new THREE.MeshStandardMaterial({ color: 0x3182ce });
+    const matHead = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.2, 1.1), matBody);
+    torso.position.y = 0.85;
+    
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), matHead);
+    head.position.y = 1.6;
+    
+    group.add(torso, head);
+    scene.add(group);
+    
+    remotePlayers[id] = group;
+}
+    
 class SoundController {
     constructor() {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -634,6 +664,42 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function initThree() {
+    // A. 剛連線時，接收目前房間內已存在的玩家清單
+    socket.on('currentPlayers', (players) => {
+        Object.keys(players).forEach((id) => {
+            if (id !== socket.id) { // 排除自己
+                createRemotePlayerMesh(id);
+                remotePlayers[id].position.set(players[id].x, players[id].y - 1.7, players[id].z);
+                remotePlayers[id].rotation.y = players[id].rotationY;
+            }
+        });
+    });
+    
+    // B. 當有其他新玩家加入遊戲
+    socket.on('newPlayer', (playerData) => {
+        if (!remotePlayers[playerData.id]) {
+            createRemotePlayerMesh(playerData.id);
+        }
+    });
+    
+    // C. 當其他玩家移動時，更新他們在場景中的模型位置與方向
+    socket.on('playerMoved', (data) => {
+        const remoteMesh = remotePlayers[data.id];
+        if (remoteMesh) {
+            // 更新位置 (將玩家腳底高度扣除 offset)
+            remoteMesh.position.set(data.x, data.y - 1.7, data.z);
+            remoteMesh.rotation.y = data.rotationY;
+        }
+    });
+    
+    // D. 當其他玩家離線，將他的模型從 3D 場景中移除
+    socket.on('playerLeft', (id) => {
+        if (remotePlayers[id]) {
+            scene.remove(remotePlayers[id]);
+            delete remotePlayers[id];
+        }
+    });
+        
     const container = document.getElementById('game-container');
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xa0c4ff);
@@ -1800,6 +1866,15 @@ function updatePlayer(dt) {
         player.teleportCD -= dt; 
     }
 
+    if (socket && socket.connected) {
+        socket.emit('playerMove', {
+            x: player.pos.x,
+            y: player.pos.y,
+            z: player.pos.z,
+            rotationY: player.rotation.y
+        });
+    }
+    
     // 視角與模型同步
     if (isThirdPerson) {
         playerMesh.visible = true;
