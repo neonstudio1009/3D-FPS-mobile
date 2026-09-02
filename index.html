@@ -1581,7 +1581,9 @@ function startGame() {
     document.getElementById('hud').style.display = 'block';
 
     isGameActive = true; isPaused = false;
-    try { document.body.requestPointerLock(); } catch(e) {}
+    if (!('ontouchstart' in window)) {
+        try { document.body.requestPointerLock(); } catch(e) {}
+    }
     updateUI();
 }
 
@@ -1713,6 +1715,19 @@ function showHitMarker() {
 function updatePlayer(dt) {
     if (!isGameActive || isPaused) return;
 
+    // === 1. 新增：玩家血量與死亡判定 (區分 1V1 與普通模式) ===
+    if (player.hp <= 0) {
+        if (currentMode === '1v1') {
+            player.hp = 0;
+            respawn1v1Player(); // 1V1 模式：觸發無限復活
+        } else {
+            isGameActive = false; // 普通模式：遊戲結束
+            document.getElementById('gameover-screen').style.display = 'block';
+        }
+        return; // 死亡後直接中斷後續的位移與開槍邏輯
+    }
+
+    // 後座力恢復
     if (player.recoilPitch > 0) {
         const recovery = player.recoilPitch * 10 * dt;
         player.recoilPitch -= recovery;
@@ -1721,10 +1736,12 @@ function updatePlayer(dt) {
 
     // 只要「右鍵」、「瞄準按鈕」或「射擊按鈕」任一被按住，均維持開鏡狀態
     const isAiming = (mouseButtons && mouseButtons[2]) || touchState.isAimingBtn || touchState.isShootBtn;
-    player.targetFov = isAiming ? 45 : 75;
+    const curWpn = player.inventory[player.currentSlot];
+    player.targetFov = isAiming ? curWpn.zoomFov : 75;
     camera.fov = THREE.MathUtils.lerp(camera.fov, player.targetFov, 0.2);
     camera.updateProjectionMatrix();
 
+    // 位移邏輯
     const moveDir = new THREE.Vector3();
     if (keys['KeyW']) moveDir.z -= 1;
     if (keys['KeyS']) moveDir.z += 1;
@@ -1743,6 +1760,7 @@ function updatePlayer(dt) {
     player.vel.x = moveDir.x * currentSpeed;
     player.vel.z = moveDir.z * currentSpeed;
 
+    // 重力與跳躍
     player.vel.y -= 24 * dt;
     if (keys['Space'] && player.onGround) {
         player.vel.y = 8.0; 
@@ -1757,12 +1775,14 @@ function updatePlayer(dt) {
         player.pos.y = 1.7; player.vel.y = 0; player.onGround = true;
     }
 
+    // 彈跳板判定
     jumpPads.forEach(pad => {
         if (Math.hypot(player.pos.x - pad.position.x, player.pos.z - pad.position.z) < 1.2 && player.pos.y <= 1.8) {
             player.vel.y = 17.5; player.onGround = false;
         }
     });
 
+    // 傳送門判定
     if (player.teleportCD <= 0) {
         teleporters.forEach(pair => {
             if (player.pos.distanceTo(pair.a.position) < 1.4) {
@@ -1777,6 +1797,7 @@ function updatePlayer(dt) {
         player.teleportCD -= dt; 
     }
 
+    // 視角與模型同步
     if (isThirdPerson) {
         playerMesh.visible = true;
         playerMesh.position.set(player.pos.x, player.pos.y - 1.7, player.pos.z);
@@ -1794,8 +1815,9 @@ function updatePlayer(dt) {
         camera.position.copy(player.pos);
     }
 
+    // 連射機制 (已移除重複宣告 curWpn 變數)
     const isShooting = (mouseButtons && mouseButtons[0]) || touchState.isShootBtn;
-    if (isShooting) {
+    if (isShooting && curWpn.type === 'auto') {
         shoot();
     }
 }
@@ -1842,6 +1864,8 @@ function updateAI(dt) {
     if (!isGameActive || isPaused) return;
     const now = performance.now();
 
+    if (currentMode === '1v1') return;
+    
     botEntities.forEach(bot => {
         let targetPos = player.pos.clone();
         let minDist = bot.mesh.position.distanceTo(player.pos);
@@ -2027,7 +2051,7 @@ function start1v1Match() {
     player.currentSlot = 0;
     switchWeapon(0);
 
-    spawnBot('對手玩家 (P2)', 'normal');
+    
 
     document.getElementById('mode-title').innerText = '1V1 密碼對決模式';
     document.getElementById('custom-prep-screen').style.display = 'none';
@@ -2037,8 +2061,21 @@ function start1v1Match() {
     document.getElementById('hud').style.display = 'block';
 
     isGameActive = true; isPaused = false;
-    try { document.body.requestPointerLock(); } catch(e) {}
+    if (!('ontouchstart' in window)) {
+        try { document.body.requestPointerLock(); } catch(e) {}
+    }
     updateUI();
+}
+
+function respawn1v1Player() {
+    // 設置 2 秒後在固定地點滿血重生
+    setTimeout(() => {
+        player.hp = 100;
+        // 根據你程式碼的設定，位置變數為 player.pos
+        player.pos.set(0, 1.7, 15); 
+        player.vel.set(0, 0, 0);
+        updateUI();
+    }, 2000);
 }
 
 </script>
