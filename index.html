@@ -1244,6 +1244,7 @@ function setupEventListeners() {
             weaponMods[wKey].magLevel++;
             updateCoinsUI();
             updateWorkshopUI();
+            saveGameData();
         }
     });
     document.getElementById('upgrade-recoil-btn').addEventListener('click', () => {
@@ -2146,6 +2147,7 @@ function gameOver() {
     document.getElementById('gameover-summary').innerText = `最終擊殺數: ${player.kills} | 本局共獲得金幣: ${player.earnedCoins}💰`;
     document.getElementById('gameover-screen').style.display = 'flex';
     updateCoinsUI();
+    saveGameData();
 }
 
 function onWindowResize() {
@@ -2270,9 +2272,7 @@ function respawn1v1Player() {
 }
 // 當玩家在選單點擊 1v1 開始時
 function join1v1Game() {
-    const inputPassword = document.getElementById('roomPassword').value || 'room1';
-    
-    // 告訴後端我要加入這個房間
+    const inputPassword = document.getElementById('join-password-input').value || 'room1';
     socket.emit('join1v1', inputPassword);
 }
 
