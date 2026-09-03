@@ -703,6 +703,7 @@ let currentWheelAngle = 0;
 let isSpinning = false;
 
 window.addEventListener('DOMContentLoaded', () => {
+    loadGameData(); // 載入本地存檔
     soundCtrl = new SoundController();
     initThree();
     setupEventListeners();
