@@ -467,14 +467,15 @@ socket.on('playerDamaged', (data) => {
     }
 });
 
-// 監聽擊殺與重生事件
+// 監聽擊殺事件（移除原本直接 player.hp = 100 的邏輯）
 socket.on('playerKilled', (data) => {
     if (data.victimId === socket.id) {
-        alert("你被擊敗了！即將重生...");
-        // 重置玩家座標與血量 UI
-        player.pos.set(0, 1.7, 0);
-        player.hp = 100;
-        document.getElementById('healthBar').style.width = '100%';
+        // 如果是 1v1 模式則執行 1v1 復活，非 1v1 模式執行 gameOver
+        if (currentMode === '1v1') {
+            respawn1v1Player();
+        } else if (!player.isDead) {
+            gameOver();
+        }
     }
 });
     
@@ -2095,7 +2096,13 @@ function updateUI() {
 
 function gameOver() {
     isGameActive = false;
-    try { document.exitPointerLock(); } catch(e) {}
+    player.isDead = true;
+    
+    // 強制釋放滑鼠指標鎖定，讓玩家可以點擊 UI 按鈕
+    if (document.exitPointerLock) {
+        document.exitPointerLock();
+    }
+    
     document.getElementById('hud').style.display = 'none';
     document.getElementById('gameover-summary').innerText = `最終擊殺數: ${player.kills} | 本局共獲得金幣: ${player.earnedCoins}💰`;
     document.getElementById('gameover-screen').style.display = 'flex';
