@@ -43,9 +43,9 @@ io.on('connection', (socket) => {
             // 廣播血量更新給所有人
             io.emit('playerDamaged', { id: data.targetId, hp: target.hp });
     
-            // 判定死亡與重生
+            // 判定死亡
             if (target.hp <= 0) {
-                target.hp = 100; // 重置血量
+                target.hp = 0;
                 io.emit('playerKilled', { victimId: data.targetId, killerId: socket.id });
             }
         }
