@@ -1,39 +1,55 @@
-const io = require('socket.io')(server, {
-    cors: { origin: "*" }
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+
+// 初始化 Socket.IO 並允許跨域 (CORS)
+const io = new Server(server, {
+    cors: {
+        origin: "*"
+    }
 });
+
 const players = {};
 
 io.on('connection', (socket) => {
-    // 新玩家連入
+    console.log('玩家已連線:', socket.id);
+
+    // 新增玩家資料
     players[socket.id] = { x: 0, y: 1.7, z: 0, rotationY: 0 };
-    
-    // 廣播給其他玩家有新對手加入
+
+    // 發送當前所有玩家資訊給新連線的人
+    socket.emit('currentPlayers', players);
+
+    // 廣播給其他人有新玩家加入
     socket.broadcast.emit('newPlayer', { id: socket.id });
 
-    // 接收玩家位移並轉發
+    // 處理玩家位移
     socket.on('playerMove', (data) => {
         if (players[socket.id]) {
             players[socket.id] = data;
-            socket.broadcast.emit('playerMoved', { id: socket.id, data: data });
-        }
-    });
-    // 監聽玩家加入指定房間
-    socket.on('join1v1', (roomId) => {
-        socket.join(roomId);
-        
-        // 取得目前房間內的連線人數
-        const room = io.sockets.adapter.rooms.get(roomId);
-        const numClients = room ? room.size : 0;
-    
-        // 當房間達到 2 人時，通知雙方遊戲開始，且不生成 Bot
-        if (numClients === 2) {
-            io.to(roomId).emit('matchReady', { room: roomId });
+            socket.broadcast.emit('playerMoved', {
+                id: socket.id,
+                x: data.x,
+                y: data.y,
+                z: data.z,
+                rotationY: data.rotationY
+            });
         }
     });
 
     // 斷線處理
     socket.on('disconnect', () => {
+        console.log('玩家已離線:', socket.id);
         delete players[socket.id];
         io.emit('playerLeft', socket.id);
     });
+});
+
+// 使用 Render 提供動態 Port 或預設 3000
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`伺服器成功執行於 Port ${PORT}`);
 });
