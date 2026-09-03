@@ -478,6 +478,35 @@ socket.on('playerKilled', (data) => {
         }
     }
 });
+
+
+// 存檔資料 key
+const SAVE_KEY = 'FPS_GAME_SAVE_DATA';
+
+function saveGameData() {
+    const saveData = {
+        coins: playerCoins,
+        unlockedWeapons: unlockedWeapons,
+        unlockedSkins: unlockedSkins,
+        weaponMods: weaponMods
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+}
+
+function loadGameData() {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            if (typeof data.coins === 'number') playerCoins = data.coins;
+            if (Array.isArray(data.unlockedWeapons)) unlockedWeapons = data.unlockedWeapons;
+            if (Array.isArray(data.unlockedSkins)) unlockedSkins = data.unlockedSkins;
+            if (data.weaponMods) weaponMods = data.weaponMods;
+        } catch (e) {
+            console.error('存檔讀取失敗:', e);
+        }
+    }
+}
     
 // 儲存其他線上玩家的模型物件，結構為 { socketId: THREE.Group }
 const remotePlayers = {};
@@ -1104,7 +1133,14 @@ function spawnBot(name, customType = null) {
 function spawnBoss() {
     if (activeBoss) return;
     const botData = createBotMesh('boss');
-    botData.group.position.set(0, 0, -30);
+
+    // 隨機計算生成角度與距離
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 20 + Math.random() * 15; // 距離原點 20 到 35 單位
+    const spawnX = Math.cos(angle) * dist;
+    const spawnZ = Math.sin(angle) * dist;
+
+    botData.group.position.set(spawnX, 0, spawnZ);
 
     const warnEl = document.getElementById('boss-warning');
     warnEl.style.display = 'block';
