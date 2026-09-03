@@ -458,6 +458,26 @@
 // 建立與伺服器的連線（請替換為你的後端 Port 或網址）
 const socket = io("https://threed-fps-mobile.onrender.com");
 
+// 監聽所有人扣血事件
+socket.on('playerDamaged', (data) => {
+    if (data.id === socket.id) {
+        // 自己被打中：更新 UI 血條
+        player.hp = data.hp;
+        document.getElementById('healthBar').style.width = player.hp + '%';
+    }
+});
+
+// 監聽擊殺與重生事件
+socket.on('playerKilled', (data) => {
+    if (data.victimId === socket.id) {
+        alert("你被擊敗了！即將重生...");
+        // 重置玩家座標與血量 UI
+        player.pos.set(0, 1.7, 0);
+        player.hp = 100;
+        document.getElementById('healthBar').style.width = '100%';
+    }
+});
+    
 // 儲存其他線上玩家的模型物件，結構為 { socketId: THREE.Group }
 const remotePlayers = {};
 
@@ -1708,6 +1728,15 @@ function shoot() {
 
     updateUI();
 
+    // 🎯【新增 1】發送開槍訊號給伺服器（讓其他玩家看到你開槍與槍火）
+    if (typeof socket !== 'undefined') {
+        socket.emit('playerShoot', {
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z
+        });
+    }
+
     const pelletCount = curWpn.pellets || 1;
     const baseDamage = player.doubleDamageTimer > 0 ? curWpn.damage * 2.0 : curWpn.damage;
 
@@ -1723,12 +1752,26 @@ function shoot() {
         raycaster.set(camera.position, rayDir);
 
         const targetObjects = [];
+        
+        // 原本的 Bot 與 炸藥桶
         botEntities.forEach(b => {
             b.mesh.traverse(child => { if (child.isMesh) targetObjects.push({ mesh: child, bot: b }); });
         });
         explosiveBarrels.forEach(barrel => {
             if (barrel.userData.hp > 0) targetObjects.push({ mesh: barrel, isBarrel: true });
         });
+
+        // 🎯【新增 2】把線上的其他玩家模型也加入判定清單
+        if (typeof remotePlayers !== 'undefined') {
+            Object.keys(remotePlayers).forEach(id => {
+                const playerMesh = remotePlayers[id];
+                if (playerMesh) {
+                    playerMesh.traverse(child => {
+                        if (child.isMesh) targetObjects.push({ mesh: child, playerId: id });
+                    });
+                }
+            });
+        }
 
         const intersects = raycaster.intersectObjects(targetObjects.map(t => t.mesh));
 
@@ -1758,6 +1801,17 @@ function shoot() {
                         killBotProcess(hitData.bot, curWpn.name);
                         break;
                     }
+                // 🎯【新增 3】打中線上真人玩家時的判定與發送傷害
+                } else if (hitData.playerId) {
+                    const isHead = hitObj.object.name === 'head';
+                    const dmg = isHead ? baseDamage * 2.2 : baseDamage;
+
+                    // 發送傷害事件給 Render 後端伺服器
+                    socket.emit('hitPlayer', { targetId: hitData.playerId, damage: dmg });
+
+                    soundCtrl.playHit();
+                    showHitMarker();
+                    break;
                 }
             }
         }
